@@ -1,20 +1,26 @@
 import { readFile } from "fs/promises";
+import { existsSync } from "fs";
 import type { SyncPatch, ParityReport, PatchFormat, PatchChange } from "../types.js";
+import { SourceScanner } from "./source-scanner.js";
 
 export class PatchGenerator {
+  private scanner = new SourceScanner();
+
   async generatePatch(report: ParityReport, format: PatchFormat = "diff"): Promise<SyncPatch> {
     let sourceCode = "";
-    try {
-      sourceCode = await readFile(report.codePath, "utf-8");
-    } catch {
-      sourceCode = "";
+    const fileExists = report.codePath && existsSync(report.codePath);
+
+    if (fileExists) {
+      try {
+        sourceCode = await readFile(report.codePath, "utf-8");
+      } catch {
+        sourceCode = "";
+      }
     }
 
     const changes = this.buildChanges(report, sourceCode);
-
-    // BUG FIX: estimate score gain based on actual penalty math, not 8-per-change
     const estimatedScoreAfter = this.estimateScoreAfterPatch(report, changes);
-    const patch = this.renderPatch(changes, report.codePath, sourceCode, format);
+    const patch = await this.renderPatch(changes, report.codePath, sourceCode, format);
 
     return {
       nodeId: report.nodeId,
@@ -32,7 +38,6 @@ export class PatchGenerator {
 
     for (const mismatch of report.mismatches) {
       if (mismatch.category === "state") {
-        // States can't be auto-patched — generate a TODO marker only
         changes.push({
           type: "add",
           property: mismatch.property,
@@ -44,89 +49,137 @@ export class PatchGenerator {
       }
 
       if (mismatch.category === "color" || mismatch.category === "token") {
-        const targetVal = mismatch.designValue.startsWith("token(")
-          ? `var(--${mismatch.designValue.slice(6, mismatch.designValue.indexOf(")"))})`
-          : mismatch.designValue.includes(" = ")
-            ? `var(--${mismatch.designValue.split(" = ")[0].replace("var(--","").replace(")","")})` 
-            : mismatch.designValue;
+        const targetVal = this.resolveTargetValue(mismatch.designValue);
+        const fromVal = mismatch.codeValue;
+        const location = this.findExactLocation(source, fromVal, mismatch.property);
 
         changes.push({
           type: "replace",
           property: mismatch.property,
-          from: mismatch.codeValue,
+          from: fromVal,
           to: targetVal,
-          // BUG FIX: search both camelCase and kebab-case for JSX/TSX files
-          location: this.findPropertyLocation(source, mismatch.property),
+          location,
         });
         continue;
       }
 
       // spacing, typography, border
+      const location = this.findExactLocation(source, mismatch.codeValue, mismatch.property);
       changes.push({
         type: "replace",
         property: mismatch.property,
         from: mismatch.codeValue,
         to: mismatch.designValue,
-        location: this.findPropertyLocation(source, mismatch.property),
+        location,
       });
     }
 
     return changes;
   }
 
-  /**
-   * BUG FIX: estimate score accurately by computing the penalty delta for fixed mismatches,
-   * rather than adding a flat 8pts per change.
-   */
-  private estimateScoreAfterPatch(report: ParityReport, changes: PatchChange[]): number {
-    const WEIGHTS: Record<string, number> = {
-      spacing: 18, color: 20, typography: 15, border: 12, state: 17, token: 18,
-    };
-
-    // Calculate penalty removed by applied changes (exclude state TODOs)
-    let penaltyRemoved = 0;
-    for (const mismatch of report.mismatches) {
-      if (mismatch.category === "state") continue; // TODOs don't fix anything
-      const isFixed = changes.some(c => c.property === mismatch.property && c.type === "replace");
-      if (!isFixed) continue;
-      const weight = WEIGHTS[mismatch.category] ?? 10;
-      const mult = mismatch.severity === "critical" ? 1.5 : mismatch.severity === "warning" ? 1.0 : 0.5;
-      penaltyRemoved += weight * mult;
-    }
-
-    return Math.min(100, Math.round(report.score + penaltyRemoved));
-  }
-
-  private renderPatch(changes: PatchChange[], filePath: string, source: string, format: PatchFormat): string {
+  private async renderPatch(
+    changes: PatchChange[],
+    filePath: string,
+    source: string,
+    format: PatchFormat
+  ): Promise<string> {
     switch (format) {
-      case "diff": return this.renderDiff(changes, filePath);
+      case "diff": return this.renderUnifiedDiff(changes, filePath, source);
       case "jsx": return this.renderJsx(changes, filePath);
       case "css": return this.renderCss(changes, filePath);
       case "json": return JSON.stringify({ file: filePath, changes }, null, 2);
     }
   }
 
-  private renderDiff(changes: PatchChange[], filePath: string): string {
-    const lines = [`--- a/${filePath}`, `+++ b/${filePath}`, ""];
+  /**
+   * True unified diff — real line numbers, real context, git apply compatible.
+   */
+  private renderUnifiedDiff(changes: PatchChange[], filePath: string, source: string): string {
+    if (!source) {
+      // No source file — produce a descriptive patch that still conveys the changes
+      const lines = [
+        `--- a/${filePath}`,
+        `+++ b/${filePath}`,
+        ``,
+        `# Source file not found at ${filePath}`,
+        `# Apply these changes manually:`,
+        ``,
+      ];
+      for (const change of changes) {
+        if (change.type === "replace") {
+          lines.push(`@@ ${change.property} @@`);
+          lines.push(`-  ${this.toCssProperty(change.property)}: ${change.from};`);
+          lines.push(`+  ${this.toCssProperty(change.property)}: ${change.to};`);
+          lines.push(``);
+        } else if (change.type === "add") {
+          lines.push(`+  ${change.to}`);
+          lines.push(``);
+        }
+      }
+      return lines.join("\n");
+    }
+
+    const sourceLines = source.split("\n");
+    const hunks: Array<{ lineNum: number; hunkLines: string[] }> = [];
+    const appliedLines = new Set<number>(); // Don't double-patch same line
 
     for (const change of changes) {
-      if (change.type === "replace") {
-        lines.push(`@@ ${change.location ?? "location unknown"} @@`);
-        lines.push(`-  ${change.property}: ${change.from};`);
-        lines.push(`+  ${change.property}: ${change.to};`);
-        lines.push("");
-      } else if (change.type === "add") {
-        lines.push(`@@ end of file @@`);
-        lines.push(`+  ${change.to}`);
-        lines.push("");
+      if (change.type === "add") continue; // State TODOs go at the end
+
+      const lineIndex = this.findLineIndex(sourceLines, change.from, change.property);
+      if (lineIndex === -1 || appliedLines.has(lineIndex)) continue;
+      appliedLines.add(lineIndex);
+
+      const CONTEXT = 3;
+      const contextStart = Math.max(0, lineIndex - CONTEXT);
+      const contextEnd = Math.min(sourceLines.length - 1, lineIndex + CONTEXT);
+      const hunkSize = contextEnd - contextStart + 1;
+
+      const hunkHeader = `@@ -${contextStart + 1},${hunkSize} +${contextStart + 1},${hunkSize} @@`;
+      const hunkLines = [hunkHeader];
+
+      for (let j = contextStart; j <= contextEnd; j++) {
+        if (j === lineIndex) {
+          hunkLines.push(`-${sourceLines[j]}`);
+          hunkLines.push(`+${sourceLines[j].replace(change.from, change.to)}`);
+        } else {
+          hunkLines.push(` ${sourceLines[j]}`);
+        }
+      }
+
+      hunks.push({ lineNum: lineIndex, hunkLines });
+    }
+
+    // Sort hunks by line number for a clean, readable patch
+    hunks.sort((a, b) => a.lineNum - b.lineNum);
+
+    const addChanges = changes.filter(c => c.type === "add");
+    const output = [
+      `--- a/${filePath}`,
+      `+++ b/${filePath}`,
+      ...hunks.flatMap(h => [...h.hunkLines, ""]),
+    ];
+
+    if (addChanges.length > 0) {
+      const lastLine = sourceLines.length;
+      output.push(`@@ -${lastLine},0 +${lastLine},${addChanges.length} @@`);
+      for (const c of addChanges) {
+        output.push(`+${c.to}`);
       }
     }
 
-    if (lines.length <= 3) {
-      lines.push("// No patchable changes — all issues require manual intervention.");
+    if (hunks.length === 0 && addChanges.length === 0) {
+      output.push("# No exact string matches found in source.");
+      output.push("# Values may be set via CSS class, computed at runtime, or in a separate stylesheet.");
+      output.push("# Manual changes required:");
+      for (const c of changes) {
+        if (c.type === "replace") {
+          output.push(`# ${c.property}: ${c.from} → ${c.to}`);
+        }
+      }
     }
 
-    return lines.join("\n");
+    return output.join("\n");
   }
 
   private renderJsx(changes: PatchChange[], filePath: string): string {
@@ -134,14 +187,14 @@ export class PatchGenerator {
     const adds = changes.filter(c => c.type === "add");
 
     const styleLines = replaces.map(c => {
-      // BUG FIX: output camelCase for JSX style objects
       const camel = c.property.replace(/-([a-z])/g, (_, l: string) => l.toUpperCase());
-      return `  ${camel}: "${c.to}", // was: "${c.from}" (${c.location ?? "unknown location"})`;
+      const cleanProp = camel.replace(/ \(token\)/, "").replace(/ state/, "").trim();
+      return `  ${cleanProp}: "${c.to}", // was: "${c.from}"  [${c.location ?? "location unknown"}]`;
     });
 
     return [
       `// DesignDiff patch — ${filePath}`,
-      `// Apply corrections to the component's style prop or className:`,
+      `// Apply to the component's style prop or styled-component:`,
       ``,
       `const designDiffFixes = {`,
       ...styleLines,
@@ -161,35 +214,92 @@ export class PatchGenerator {
     return [
       `/* DesignDiff patch — ${filePath} */`,
       `.component {`,
-      ...replaces.map(c => `  ${c.property}: ${c.to}; /* was: ${c.from} */`),
+      ...replaces.map(c => {
+        const prop = this.toCssProperty(c.property);
+        return `  ${prop}: ${c.to}; /* was: ${c.from}  [${c.location ?? "location unknown"}] */`;
+      }),
       `}`,
       ...(adds.length ? [
         ``,
-        `/* Missing states: */`,
+        `/* Missing states — implement these: */`,
         ...adds.map(c => `/* ${c.to} */`),
       ] : []),
     ].join("\n");
   }
 
   /**
-   * BUG FIX: search both kebab-case (CSS files) and camelCase (JSX/TSX)
+   * Find the exact line index of a value in source — searches both kebab and camelCase.
    */
-  private findPropertyLocation(source: string, property: string): string {
-    if (!source) return "location unknown — file not found";
+  private findLineIndex(lines: string[], value: string, property: string): number {
+    if (!value || value === "missing" || value === "location unknown") return -1;
 
-    const lines = source.split("\n");
-    const kebab = property.replace(/([A-Z])/g, "-$1").toLowerCase();
-    const camel = property.replace(/-([a-z])/g, (_, l: string) => l.toUpperCase());
-    // Also strip " state" or " (token)" suffixes that come from mismatch property names
-    const clean = kebab.replace(/ \(.*\)/, "").replace(/ state/, "").trim();
+    const kebab = property.replace(/([A-Z])/g, "-$1").toLowerCase()
+      .replace(/ \(.*\)/, "").replace(/ state/, "").trim();
+    const camel = property.replace(/-([a-z])/g, (_, l: string) => l.toUpperCase())
+      .replace(/ \(.*\)/, "").replace(/ state/, "").trim();
 
+    // First: find the line containing the actual value
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      if (line.includes(clean) || line.includes(camel) || line.includes(kebab)) {
-        return `line ${i + 1}`;
+      if (line.includes(value)) {
+        return i;
       }
     }
 
-    return "location unknown";
+    // Second: find by property name
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.includes(kebab) || line.includes(camel)) {
+        return i;
+      }
+    }
+
+    return -1;
+  }
+
+  private findExactLocation(source: string, value: string, property: string): string {
+    if (!source || !value || value === "missing") return "location unknown — file not found";
+    const lines = source.split("\n");
+    const idx = this.findLineIndex(lines, value, property);
+    return idx >= 0 ? `line ${idx + 1}` : "location unknown";
+  }
+
+  private resolveTargetValue(designValue: string): string {
+    // "token(brand-blue) = #2563EB" → "var(--brand-blue)"
+    if (designValue.startsWith("token(")) {
+      const tokenName = designValue.slice(6, designValue.indexOf(")"));
+      return `var(--${tokenName})`;
+    }
+    // "var(--brand-blue) = #2563EB" → "var(--brand-blue)"
+    if (designValue.includes(" = ")) {
+      return designValue.split(" = ")[0];
+    }
+    return designValue;
+  }
+
+  private toCssProperty(property: string): string {
+    return property
+      .replace(/ \(token\)/, "")
+      .replace(/ \(.*\)/, "")
+      .replace(/ state/, "")
+      .trim();
+  }
+
+  private estimateScoreAfterPatch(report: ParityReport, changes: PatchChange[]): number {
+    const WEIGHTS: Record<string, number> = {
+      spacing: 18, color: 20, typography: 15, border: 12, state: 17, token: 18,
+    };
+
+    let penaltyRemoved = 0;
+    for (const mismatch of report.mismatches) {
+      if (mismatch.category === "state") continue;
+      const isFixed = changes.some(c => c.property === mismatch.property && c.type === "replace");
+      if (!isFixed) continue;
+      const weight = WEIGHTS[mismatch.category] ?? 10;
+      const mult = mismatch.severity === "critical" ? 1.5 : mismatch.severity === "warning" ? 1.0 : 0.5;
+      penaltyRemoved += weight * mult;
+    }
+
+    return Math.min(100, Math.round(report.score + penaltyRemoved));
   }
 }
