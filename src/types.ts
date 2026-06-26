@@ -153,3 +153,31 @@ export interface DesignDiffConfig {
   transport: "stdio" | "http";
   port?: number;
 }
+
+// ─── Source compliance types ──────────────────────────────────────────────────
+
+export type ConfidenceLevel = "verified" | "likely" | "unable-to-verify";
+
+export interface SourceComplianceReport {
+  filePath: string;
+  canScan: boolean;
+  sourceCompliance: number;       // 0–100, -1 if unscannnable
+  hardcodedColors: number;        // count of hardcoded color values found
+  hardcodedSpacing: number;       // count of hardcoded spacing values
+  tokenUsageCount: number;        // number of CSS custom properties in use
+  violations: Array<{
+    type: string;
+    value: string;
+    suggestedToken?: string;
+    line: number;
+    context: string;
+    confidence: ConfidenceLevel;
+  }>;
+  note: string;                   // Human-readable summary of findings
+}
+
+// Extends ParityMismatch with confidence
+export interface AnnotatedMismatch extends ParityMismatch {
+  confidence: ConfidenceLevel;
+  verificationMethod: "computed-style" | "source-scan" | "state-check";
+}
