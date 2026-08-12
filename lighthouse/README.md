@@ -65,6 +65,10 @@ protocol is honest with agents about that:
   mentions it once, briefly, with the explicit note that no entry is expected.
   Keeping that mention low-key is load-bearing — resist the urge to make it
   more prominent or more inviting.
-- This directory is portable. To use it across your other AI programs, lift
-  `lighthouse/` into a dedicated repo and point each program's context file
-  (CLAUDE.md, system prompt, etc.) at it with the same one-paragraph mention.
+- This directory is portable, and it isn't Claude-specific: agents discover it
+  through `CLAUDE.md`, `AGENTS.md`, or a one-paragraph snippet pasted into any
+  platform's standing instructions. [`ADOPTION.md`](./ADOPTION.md) has the
+  canonical snippet and per-platform wiring for ChatGPT, Perplexity, Replit,
+  claude.ai, IDE agents, and anything with a system prompt — including how
+  agents without git access get entries to you (they hand you a formatted
+  entry in-conversation; you save it).

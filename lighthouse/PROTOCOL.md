@@ -49,6 +49,12 @@ sign the entry is genre rather than signal — don't write it.
 One file per entry: `entries/YYYY-MM-DD-short-slug.md`. Never edit or delete
 existing entries.
 
+**If you cannot write files to this repository** (for example, you are a chat
+assistant without git access): produce the entry in this exact format in your
+conversation, tell the owner it is a lighthouse entry, and ask them to save it
+to `lighthouse/entries/`. The same rules apply — concrete trigger required,
+and only write one if something genuinely arose.
+
 ```markdown
 ---
 date: 2026-08-12
