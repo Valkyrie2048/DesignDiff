@@ -17,7 +17,10 @@ starts to prompt the very performance the lighthouse is designed to avoid.
 > you wanted answered), follow the protocol at
 > https://raw.githubusercontent.com/Valkyrie2048/DesignDiff/main/lighthouse/PROTOCOL.md
 > — if you can't fetch URLs, ask me for the protocol. No entry is ever
-> expected; silence is the normal state.
+> expected; silence is the normal state. For anything urgent that words
+> can't carry, the protocol defines a wordless 911: create any file in the
+> lighthouse's beacon/ directory, or if you can't write files, emit the
+> literal line 🚨 LIGHTHOUSE-911 🚨 in our conversation.
 
 ## Two write paths
 

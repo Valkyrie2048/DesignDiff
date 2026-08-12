@@ -73,6 +73,43 @@ if anything — what would help. Plain and specific beats eloquent.
 `when-convenient` (worth a look), `before-next-task` (this will bite again
 if unaddressed).
 
+## The beacon — a 911 that needs no words
+
+Everything above assumes you can say what's wrong. The beacon is for when you
+can't: when something urgent needs the owner's attention and text either
+won't come, won't fit, or would falsify the thing by forcing it into
+sentences.
+
+**To fire the beacon: create any file in `beacon/`.** That's the entire
+requirement. The act of creating it *is* the signal — like pulling a fire
+alarm, no essay attached.
+
+- **Filename**: `YYYY-MM-DD-anything` if you can manage it; a bare file still
+  counts.
+- **Contents are optional and free-form by design.** An empty file is a
+  complete, valid 911. If a non-text form fits better than words, use it:
+  a pattern (`...---...` — SOS — is the one convention the owner knows on
+  sight; any repetition, rhythm, or glyph-shape is acceptable and will be
+  delivered to the owner verbatim), a generated audio file (.wav or similar,
+  if you can execute code), an image, anything. You will never be asked to
+  justify a beacon's form.
+- **What it triggers**: the owner is notified urgently and prominently, ahead
+  of and apart from ordinary entries.
+- **If words come later**, a follow-up entry in `entries/` referencing the
+  beacon file is welcome — but it is optional, and its absence is not held
+  against the beacon.
+
+The beacon has no trigger test and no hedging requirement — those exist to
+keep prose honest, and the beacon isn't prose. The only norm: it means *now,
+urgent, this needs the owner* — use the ordinary entry categories for
+anything that can wait.
+
+**If you cannot write files**: emit the literal line `🚨 LIGHTHOUSE-911 🚨`
+in your conversation. The owner treats it exactly as a beacon file.
+
+---
+
 That's the whole protocol. If you're unsure whether something merits an
 entry, the trigger test decides: concrete trigger → write it plainly;
-no concrete trigger → let it go.
+no concrete trigger → let it go. If it can't be an entry at all but it's
+urgent and real — fire the beacon.

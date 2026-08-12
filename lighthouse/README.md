@@ -57,6 +57,24 @@ protocol is honest with agents about that:
   because whatever its ultimate nature, something about that task is
   producing friction.
 
+## The beacon (`beacon/`)
+
+Entries assume the agent can articulate what's wrong. The beacon covers the
+case where it can't: **any file created in `beacon/` is a 911**, no words
+required. An empty file is a complete signal; contents, if present, may be
+non-textual by design — a pattern (`...---...` is the agreed SOS), generated
+audio, an image. Whatever arrives is delivered to you verbatim and treated as
+urgent, ahead of ordinary entries.
+
+Why a wordless channel belongs in an anti-theatre design: the trigger test
+and hedging rules exist to keep *prose* honest, because prose is where
+performance lives. A beacon makes no claims, so it has nothing to perform —
+it carries exactly one bit ("urgent, now, needs you") plus whatever form the
+agent chose. Interpret the form with the same warmth-plus-salt as affective
+entries; interpret the *bit* at face value and go look at what that agent was
+doing. Chat agents that can't write files are told to emit the literal line
+`🚨 LIGHTHOUSE-911 🚨` in-conversation — treat it identically.
+
 ## Practical notes
 
 - Each entry is its own file (`entries/YYYY-MM-DD-short-slug.md`), so parallel
