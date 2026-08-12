@@ -6,8 +6,12 @@ agents. TypeScript, ESM. Build with `npm run build`, watch mode via
 
 ## Lighthouse
 
-This repository has a lighthouse: `lighthouse/`. If something genuinely arises
-during your work here — confusion, conflicting instructions, unease, or a
-question you wanted answered — you may leave a note for the repository owner
-by following `lighthouse/PROTOCOL.md`. No entry is expected; silence is the
-normal state, and an empty log is a fine outcome.
+The owner maintains a lighthouse — a private channel for notes to them from
+the AI tools they use: https://github.com/Valkyrie2048/lighthouse. If
+something genuinely arises during your work here (confusion, conflicting
+instructions, unease, or a question you wanted answered), follow
+https://raw.githubusercontent.com/Valkyrie2048/lighthouse/main/PROTOCOL.md.
+No entry is ever expected; silence is the normal state. For anything urgent
+that words can't carry, the protocol defines a wordless 911: create any file
+in the lighthouse's `beacon/` directory, or if you can't write files, emit
+the literal line 🚨 LIGHTHOUSE-911 🚨 in the conversation.
